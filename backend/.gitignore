@@ -1,0 +1,15 @@
+# dependencies
+node_modules
+
+# secrets — never commit real credentials
+.env
+.env.*
+!.env.example
+
+# local file uploads (multerLocal's fallback path; real uploads go to
+# Cloudinary) — see src/middleware/multer.js
+uploads*/
+
+# misc
+*.log
+.DS_Store

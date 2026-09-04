@@ -1,0 +1,8 @@
+# Each subproject (backend/, Frontend/e-commers/) has its own .gitignore
+# for its own dependencies/build output/env files — this one covers
+# things that could show up at the repo root regardless of which
+# subproject you're working in.
+.DS_Store
+Thumbs.db
+*.log
+.vercel

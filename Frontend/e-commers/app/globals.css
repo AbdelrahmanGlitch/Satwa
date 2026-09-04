@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+/* Platinum Noir — true black ground, champagne/platinum accent, pure white text. */
+:root {
+  --color-ink: #000000;
+  --color-surface: #0a0a0a;
+  --color-surface-raised: #161616;
+  --color-accent: #d9c9a3;
+  --color-accent-bright: #ede1c8;
+  --color-ivory: #ffffff;
+  --color-taupe: #9c9284;
+  --color-line: rgba(255, 255, 255, 0.1);
+  --color-line-strong: rgba(255, 255, 255, 0.2);
+  --color-danger: #b3462c;
+}
+
+@theme inline {
+  --color-ink: var(--color-ink);
+  --color-surface: var(--color-surface);
+  --color-surface-raised: var(--color-surface-raised);
+  --color-accent: var(--color-accent);
+  --color-accent-bright: var(--color-accent-bright);
+  --color-ivory: var(--color-ivory);
+  --color-taupe: var(--color-taupe);
+  --color-line: var(--color-line);
+  --color-line-strong: var(--color-line-strong);
+  --color-danger: var(--color-danger);
+  --font-display: var(--font-cinzel);
+  --font-sans: var(--font-inter);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-ink);
+  color: var(--color-ivory);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-ink);
+}
+
+/* Thin, brand-consistent scrollbar (webkit) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-ink);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 999px;
+}
+
+.text-gradient-accent {
+  background: linear-gradient(120deg, var(--color-accent) 0%, var(--color-accent-bright) 50%, var(--color-accent) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
