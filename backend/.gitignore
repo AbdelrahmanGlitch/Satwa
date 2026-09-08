@@ -3,6 +3,7 @@ node_modules
 
 # secrets — never commit real credentials
 .env
+.env.example
 .env.*
 !.env.example
 
