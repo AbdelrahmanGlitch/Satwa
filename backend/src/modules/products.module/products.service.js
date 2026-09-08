@@ -25,8 +25,6 @@ const formatProduct = (productInfo) => {
         inStock: product.inStock,
         stockQuantity: product.stockQuantity,
         volumeMl: product.volumeMl,
-        // When the product was added to the catalogue — the admin stock
-        // dashboard dates its lifetime-sold figure from this.
         createdAt: product.createdAt
     };
 };
