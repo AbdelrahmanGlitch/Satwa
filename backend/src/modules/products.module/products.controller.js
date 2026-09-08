@@ -8,7 +8,7 @@ import * as PS from "./products.service.js";
 
 const productRouter = Router();
 
-productRouter.get("/",validation(PV.listProductsSchema),PS.listProducts)
+productRouter.get("/",validation(PV.listProductsSchema),PS.getProducts)
 productRouter.post("/by-ids",validation(PV.getProductsByIdsSchema),PS.getProductsByIds)
 productRouter.get("/id/:id",validation(PV.getProductByIdSchema),PS.getProductById)
 productRouter.get("/:slug",validation(PV.getProductBySlugSchema),PS.getProductBySlug)

@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Package, Layers, LogOut, ExternalLink } from "lucide-react";
+import { LayoutDashboard, Package, Layers, Receipt, Boxes, LogOut, ExternalLink } from "lucide-react";
 import { LionMark } from "@/components/ui/LionMark";
 import { useAuthStore } from "@/lib/store/auth";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
+  { href: "/admin/orders", label: "Orders", icon: Receipt },
   { href: "/admin/products", label: "Products", icon: Package },
+  { href: "/admin/stock", label: "Stock", icon: Boxes },
   { href: "/admin/collections", label: "Collections", icon: Layers },
 ];
 
@@ -29,7 +31,10 @@ export function AdminSidebar() {
 
       <nav className="mt-10 flex flex-col gap-1">
         {LINKS.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href;
+          // Sub-routes keep their section highlighted (an order's detail
+          // page still means "Orders"), but "/admin" is a prefix of every
+          // link so it only ever matches exactly.
+          const active = href === "/admin" ? pathname === href : pathname.startsWith(href);
           return (
             <Link
               key={href}

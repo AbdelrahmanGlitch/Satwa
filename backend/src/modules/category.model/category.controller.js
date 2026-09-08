@@ -7,10 +7,7 @@ import { multerCloudinary } from "../../middleware/multer.js";
 
 const categoryRouter = Router()
 
-categoryRouter.get("/",validation(CV.listCategoriesSchema),CS.listCategories)
-// Registered before "/:gender/:slug" — that pattern also matches two path
-// segments, so "/id/:id" would otherwise be swallowed by it (with "id"
-// mistaken for the gender param).
+categoryRouter.get("/",validation(CV.listCategoriesSchema),CS.getCategories)
 categoryRouter.get("/id/:id",validation(CV.categoryIdSchema),CS.getCategoryById)
 categoryRouter.get("/:gender/:slug",validation(CV.getCategoryBySlugSchema),CS.getCategoryBySlug)
 

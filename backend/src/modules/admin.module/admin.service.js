@@ -6,13 +6,15 @@ import { generateToken } from "../../utils/token/generateToken.js";
 
 const PUBLIC_ADMIN_FIELDS = "-password -__v";
 
+//--------------------------- createAdmin ----------------------------
+
 export const createAdmin = asyncHandler(async(req,res,next)=>{
     const {name, email, password, cPassword, adminCode} = req.body;
     if(await adminModel.findOne({email})){
-        return next(new Error("email already exist"))
+        return next(new Error("email already exist", {cause: 400}))
     }
     if(adminCode !== process.env.ADMIN_CODE){
-        return next(new Error("The admin code is not correct"))
+        return next(new Error("The admin code is not correct",{cause: 400}))
     }
     const hash = await Hash(password, +process.env.SALT_ROUND)
     const admin = await adminModel.create({
@@ -20,18 +22,21 @@ export const createAdmin = asyncHandler(async(req,res,next)=>{
         email,
         password : hash
     })
-    const created = await adminModel.findById(admin._id).select(PUBLIC_ADMIN_FIELDS);
-    return res.status(200).json({message:"Admin Created Successfully", admin: created})
+    const createdAdmin = await adminModel.findById(admin._id).select(PUBLIC_ADMIN_FIELDS)
+    return res.status(200).json({message:"Admin Created Successfully", admin: createdAdmin})
 })
+
+//--------------------------- login ----------------------------
+
 export const login = asyncHandler(async(req,res,next)=>{
     const {email, password} = req.body;
     const admin = await adminModel.findOne({email})
     if(!admin){
-        return next(new Error("email doesn't exist"))
+        return next(new Error("email doesn't exist", {cause: 400}))
     }
     const match = await compare(password, admin.password)
     if(!match){
-        return next(new Error("Email or Password is not correct"))
+        return next(new Error("Email or Password is not correct", {cause: 400}))
     }
     const token = await generateToken({
         payload: {email, id: admin._id, role: admin.role},

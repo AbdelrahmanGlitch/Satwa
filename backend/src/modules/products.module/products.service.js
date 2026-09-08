@@ -4,51 +4,51 @@ import categoryModel from "../../DB/models/category.model.js";
 import cloudinary from "../../utils/cloudenary/index.js";
 import { slugify } from "../../utils/slugify.js";
 
-// Shapes a product document (with `collections` populated) into exactly
-// the fields the frontend's `Product` type expects — `id` instead of
-// `_id`, `collections` as slugs — so the frontend never has to know about
-// Mongo's document shape. `images` keeps both `url` (what gets rendered)
-// and `publicId` (what the admin edit form needs to send back in
-// `removeImages` to delete a specific one from Cloudinary).
-const formatProduct = (doc) => {
-    const obj = doc.toObject ? doc.toObject({ virtuals: true }) : doc;
+// ----------------- product formater --------------------
+
+const formatProduct = (productInfo) => {
+    const product = productInfo.toObject ? productInfo.toObject({ virtuals: true }) : productInfo;
     return {
-        id: String(obj._id),
-        slug: obj.slug,
-        name: obj.name,
-        tagline: obj.tagline,
-        gender: obj.gender,
-        collections: (obj.collections || []).map((c) => (c && c.slug ? c.slug : c)),
-        price: obj.price,
-        compareAtPrice: obj.compareAtPrice,
-        images: (obj.images || []).map((i) => ({ url: i.secure_url, publicId: i.public_id })),
-        notes: obj.notes,
-        description: obj.description,
-        bestSeller: obj.bestSeller,
-        isNew: obj.newArrival,
-        inStock: obj.inStock,
-        stockQuantity: obj.stockQuantity,
-        volumeMl: obj.volumeMl
+        id: String(product._id),
+        slug: product.slug,
+        name: product.name,
+        tagline: product.tagline,
+        gender: product.gender,
+        collections: (product.collections || []).map((collections) => (collections && collections.slug ? collections.slug : collections)),
+        price: product.price,
+        compareAtPrice: product.compareAtPrice,
+        images: (product.images || []).map((image) => ({ url: image.secure_url, publicId: image.public_id })),
+        notes: product.notes,
+        description: product.description,
+        bestSeller: product.bestSeller,
+        isNew: product.newArrival,
+        inStock: product.inStock,
+        stockQuantity: product.stockQuantity,
+        volumeMl: product.volumeMl,
+        // When the product was added to the catalogue — the admin stock
+        // dashboard dates its lifetime-sold figure from this.
+        createdAt: product.createdAt
     };
 };
 
-/** Resolves a list of collection slugs + a gender into Category ObjectIds, erroring on anything that doesn't exist. */
-const resolveCollectionIds = async (gender, slugs) => {
+// --------------- get collection Id by slug --------------------
+
+const getCollectionId = async (gender, slugs) => {
     const categories = await categoryModel.find({ gender, slug: { $in: slugs } });
     const found = new Set(categories.map((c) => c.slug));
     const missing = slugs.filter((s) => !found.has(s));
-    if (missing.length) {
-        const err = new Error(`Unknown collection(s) for ${gender}: ${missing.join(", ")}`);
-        err.cause = 400;
-        throw err;
-    }
+        if (missing.length) {
+            throw new Error(`Collection Not Found: ${missing.join(", ")}`, {cause: 404})
+        }
     return categories.map((c) => c._id);
-};
+ };
+
+// ----------------------------- createProduct -----------------------------
 
 export const createProduct = asyncHandler(async (req, res, next) => {
     const { name, tagline, description, price, compareAtPrice, gender, collections, notes, volumeMl, stockQuantity, bestSeller, isNew } = req.body;
 
-    const collectionIds = await resolveCollectionIds(gender, collections);
+    const collectionIds = await getCollectionId(gender, collections);
 
     let slug = slugify(name);
     if (await productModel.findOne({ slug })) {
@@ -81,11 +81,13 @@ export const createProduct = asyncHandler(async (req, res, next) => {
         createdBy: req.user?._id
     });
 
-    const populated = await productModel.findById(product._id).populate("collections", "slug");
-    return res.status(201).json({ message: "Product created successfully", product: formatProduct(populated) });
+    const createdProduct = await productModel.findById(product._id).populate("collections", "slug");
+    return res.status(201).json({ message: "Product created successfully", product: formatProduct(createdProduct) });
 });
 
-export const listProducts = asyncHandler(async (req, res, next) => {
+// ----------------------------- getProducts -----------------------------
+
+export const getProducts = asyncHandler(async (req, res, next) => {
     const { gender, collection, bestSeller, isNew, onSale, search } = req.query;
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Number(req.query.limit) || 24);
@@ -102,10 +104,8 @@ export const listProducts = asyncHandler(async (req, res, next) => {
         filter.collections = { $in: categories.map((c) => c._id) };
     }
 
-    const [products, total] = await Promise.all([
-        productModel.find(filter).populate("collections", "slug").sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
-        productModel.countDocuments(filter)
-    ]);
+    const products = await productModel.find(filter).populate("collections", "slug").sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit)
+    const total = await productModel.countDocuments(filter)
 
     return res.status(200).json({
         message: "products",
@@ -113,6 +113,8 @@ export const listProducts = asyncHandler(async (req, res, next) => {
         pagination: { page, limit, total, pages: Math.ceil(total / limit) }
     });
 });
+
+// ----------------------------- getProductBySlug -----------------------------
 
 export const getProductBySlug = asyncHandler(async (req, res, next) => {
     const product = await productModel.findOne({ slug: req.params.slug }).populate("collections", "slug");
@@ -122,9 +124,8 @@ export const getProductBySlug = asyncHandler(async (req, res, next) => {
     return res.status(200).json({ message: "product", product: formatProduct(product) });
 });
 
-// Cart/wishlist store products by Mongo id client-side (not slug), so
-// they need an id-based lookup — a single one here, a batch one below for
-// resolving a whole cart/wishlist in one request instead of N.
+// ----------------------------- getProductById -----------------------------
+
 export const getProductById = asyncHandler(async (req, res, next) => {
     const product = await productModel.findById(req.params.id).populate("collections", "slug");
     if (!product) {
@@ -133,11 +134,15 @@ export const getProductById = asyncHandler(async (req, res, next) => {
     return res.status(200).json({ message: "product", product: formatProduct(product) });
 });
 
+// ----------------------------- getProductsByIds -----------------------------
+
 export const getProductsByIds = asyncHandler(async (req, res, next) => {
     const { ids } = req.body;
     const products = await productModel.find({ _id: { $in: ids } }).populate("collections", "slug");
     return res.status(200).json({ message: "products", products: products.map(formatProduct) });
 });
+
+// ----------------------------- updateProduct -----------------------------
 
 export const updateProduct = asyncHandler(async (req, res, next) => {
     const product = await productModel.findById(req.params.id);
@@ -148,12 +153,6 @@ export const updateProduct = asyncHandler(async (req, res, next) => {
     const { name, tagline, description, price, compareAtPrice, gender, collections, notes, volumeMl, stockQuantity, bestSeller, isNew, removeImages } = req.body;
 
     if (name) {
-        // Only re-slugify when the name actually changed — same fix as
-        // categories. Re-slugifying on every edit (even an unchanged name)
-        // would also silently drop the "-<random>" suffix a slug gets at
-        // creation time when its plain slugified form collided with an
-        // existing product, changing the product's URL and risking a new
-        // collision on every subsequent unrelated edit.
         if (name !== product.name) {
             product.slug = slugify(name);
         }
@@ -169,18 +168,18 @@ export const updateProduct = asyncHandler(async (req, res, next) => {
     if (isNew !== undefined) product.newArrival = isNew;
     if (notes !== undefined) product.notes = notes;
 
-    const effectiveGender = gender || product.gender;
+    const newGender = gender || product.gender;
     if (collections) {
-        product.collections = await resolveCollectionIds(effectiveGender, collections);
+        product.collections = await getCollectionId(newGender, collections);
     }
     if (gender) product.gender = gender;
 
     if (removeImages?.length) {
-        const toRemove = product.images.filter((i) => removeImages.includes(i.public_id));
+        const toRemove = product.images.filter((Image) => removeImages.includes(Image.public_id));
         for (const img of toRemove) {
-            await cloudinary.uploader.destroy(img.public_id).catch(() => {});
+            await cloudinary.uploader.destroy(img.public_id);
         }
-        product.images = product.images.filter((i) => !removeImages.includes(i.public_id));
+        product.images = product.images.filter((Image) => !removeImages.includes(Image.public_id));
     }
 
     if (req.files?.length) {
@@ -191,9 +190,11 @@ export const updateProduct = asyncHandler(async (req, res, next) => {
     }
 
     await product.save();
-    const populated = await productModel.findById(product._id).populate("collections", "slug");
-    return res.status(200).json({ message: "Product updated", product: formatProduct(populated) });
+    const updatedProject = await productModel.findById(product._id).populate("collections", "slug");
+    return res.status(200).json({ message: "Product updated", product: formatProduct(updatedProject) });
 });
+
+// ----------------------------- deleteProduct -----------------------------
 
 export const deleteProduct = asyncHandler(async (req, res, next) => {
     const product = await productModel.findByIdAndDelete(req.params.id);

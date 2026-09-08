@@ -10,7 +10,7 @@ orderRouter.post("/checkout",authentication,authorization([roles.user]),validati
 orderRouter.get("/mine",authentication,authorization([roles.user]),OS.getMyOrders)
 orderRouter.get("/:id",authentication,validation(OV.orderIdSchema),OS.getOrderById)
 
-orderRouter.get("/",authentication,authorization([roles.admin]),validation(OV.listOrdersSchema),OS.listAllOrders)
+orderRouter.get("/",authentication,authorization([roles.admin]),validation(OV.listOrdersSchema),OS.getAllOrders)
 orderRouter.patch("/:id/status",authentication,authorization([roles.admin]),validation(OV.updateOrderStatusSchema),OS.updateOrderStatus)
 
 export default orderRouter;

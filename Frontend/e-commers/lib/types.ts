@@ -58,4 +58,7 @@ export interface Product {
   inStock: boolean;
   stockQuantity: number;
   volumeMl: number;
+  // ISO timestamp of when the product was added — the admin stock
+  // dashboard dates its lifetime-sold column from this.
+  createdAt: string;
 }

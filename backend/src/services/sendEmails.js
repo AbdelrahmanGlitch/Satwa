@@ -12,7 +12,7 @@ export const sendEmail = async (to, subject, html, attachments)=>{
         from: `"Satwa" <${process.env.EMAIL}>`,
         to: to? to : "ahmedabdelrahmen100@gmail.com",
         subject: subject ? subject : "Hello",
-        html: html? html : "<b>Hello user?</b>",
+        html: html ? html : "<b>Hello user?</b>",
         attachments: attachments? attachments : []
     });
     console.log("email")
@@ -21,9 +21,8 @@ export const sendEmail = async (to, subject, html, attachments)=>{
     } else {
         return false
     }
-    console.log("Message sent: %s", info);
-    console.log("Preview URL: %s", nodemailer.getTestMessageUrl(info));
     } catch (err) {
     console.error("Error while sending mail:", err);
+    return false
     }
-}   
+}

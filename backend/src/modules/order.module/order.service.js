@@ -3,57 +3,52 @@ import { asyncHandler } from "../../utils/errorHandling.js";
 import orderModel from "../../DB/models/order.model.js";
 import productModel from "../../DB/models/product.model.js";
 
+// --------------- payment session token generator ----------------
 const generateSessionToken = customAlphabet("1234567890abcdefghijklmnopqrstuvwxyz", 24);
 
-/**
- * Atomically decrements stock for every line item, one at a time, so two
- * simultaneous checkouts can never both succeed against the last unit of
- * the same product. If any line can't be reserved, everything already
- * decremented in this call is put back before the error surfaces.
- */
-const reserveStock = async (items) => {
-    const reserved = [];
+// ------------------------- stock update -------------------------
+
+const reStock = async (items) => {
+    const orderd = [];
     for (const item of items) {
-        const updated = await productModel.findOneAndUpdate(
+        const updatedStock = await productModel.findOneAndUpdate(
             { _id: item.productId, stockQuantity: { $gte: item.quantity } },
             { $inc: { stockQuantity: -item.quantity } },
             { new: true }
         );
-        if (!updated) {
-            for (const r of reserved) {
-                await productModel.updateOne({ _id: r.productId }, { $inc: { stockQuantity: r.quantity } });
+        if (!updatedStock) {
+            for (const stock of orderd) {
+                await productModel.updateOne({ _id: stock.productId }, { $inc: { stockQuantity: stock.quantity } });
             }
             const product = await productModel.findById(item.productId);
             if (!product) {
-                const err = new Error(`Product ${item.productId} not found`);
-                err.cause = 404;
-                throw err;
+                throw new Error(`Product ${item.productId} not found`, {cause: 404})
             }
-            const err = new Error(`Not enough stock for "${product.name}" (${product.stockQuantity} left)`);
-            err.cause = 409;
-            throw err;
+            throw new Error(`Not enough stock for "${product.name}" (${product.stockQuantity} left)`,{cause: 409})
         }
-        reserved.push({ productId: item.productId, quantity: item.quantity, product: updated });
+        orderd.push({ productId: item.productId, quantity: item.quantity, product: updatedStock });
     }
-    return reserved;
+    return orderd;
 };
+
+// ----------------------------- checkout -----------------------------
 
 export const checkout = asyncHandler(async (req, res, next) => {
     const { items, phone, address } = req.body;
 
-    let reserved;
+    let stockUpdate;
     try {
-        reserved = await reserveStock(items);
+        stockUpdate = await reStock(items);
     } catch (err) {
         return next(err);
     }
 
-    const products = reserved.map((r) => ({
-        product: r.productId,
-        quantity: r.quantity,
-        unitPrice: r.product.price
+    const products = stockUpdate.map((info) => ({
+        product: info.productId,
+        quantity: info.quantity,
+        unitPrice: info.product.price
     }));
-    const totalAmount = products.reduce((sum, p) => sum + p.unitPrice * p.quantity, 0);
+    const totalAmount = products.reduce((sum, price) => sum + price.unitPrice * price.quantity, 0);
 
     const order = await orderModel.create({
         user: req.user._id,
@@ -69,17 +64,19 @@ export const checkout = asyncHandler(async (req, res, next) => {
         order,
         payment: {
             sessionToken: order.paymentSessionToken,
-            // Fake gateway "page" — nothing real is hosted here, it's just
-            // a token the frontend hands back to /payment/fake/confirm.
             checkoutUrl: `/checkout/fake?session=${order.paymentSessionToken}`
         }
     });
 });
 
+// ----------------------------- getMyOrders -----------------------------
+
 export const getMyOrders = asyncHandler(async (req, res, next) => {
     const orders = await orderModel.find({ user: req.user._id }).populate("products.product").sort({ createdAt: -1 });
     return res.status(200).json({ message: "orders", orders });
 });
+
+// ----------------------------- getOrderById -----------------------------
 
 export const getOrderById = asyncHandler(async (req, res, next) => {
     const order = await orderModel.findById(req.params.id).populate("products.product").populate("user", "name email");
@@ -94,7 +91,9 @@ export const getOrderById = asyncHandler(async (req, res, next) => {
     return res.status(200).json({ message: "order", order });
 });
 
-export const listAllOrders = asyncHandler(async (req, res, next) => {
+// ----------------------------- getAllOrders -----------------------------
+
+export const getAllOrders = asyncHandler(async (req, res, next) => {
     const { status } = req.query;
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Number(req.query.limit) || 24);
@@ -107,6 +106,8 @@ export const listAllOrders = asyncHandler(async (req, res, next) => {
 
     return res.status(200).json({ message: "orders", orders, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
 });
+
+// ----------------------------- updateOrderStatus -----------------------------
 
 export const updateOrderStatus = asyncHandler(async (req, res, next) => {
     const order = await orderModel.findByIdAndUpdate(req.params.id, { status: req.body.status }, { new: true });

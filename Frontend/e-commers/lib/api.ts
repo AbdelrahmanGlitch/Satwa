@@ -9,7 +9,13 @@
 // build workers hit this file before .env.local is loaded for them,
 // silently pinning every request in that worker to the fallback below).
 export function getApiUrl() {
-  return process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:5000";
+  // Trim a trailing slash defensively — combined with a leading-slash path
+  // (e.g. "/product") a value like "https://api.example.com/" would build
+  // "https://api.example.com//product", which the backend 308-redirects to
+  // the single-slash form. Fetch follows that fine, but it's an extra
+  // round trip for nothing.
+  const url = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:5000";
+  return url.replace(/\/+$/, "");
 }
 
 function isNextInternalSignal(err: unknown): boolean {

@@ -11,27 +11,25 @@ import { compare } from './../../utils/hash/compere.js';
 import { generateToken } from './../../utils/token/generateToken.js';
 import { verifyGoogleToken } from '../../utils/google/verifyGoogleToken.js';
 
-// Fields safe to hand back in a response — every route below selects this
-// explicitly instead of returning the raw Mongoose document, so a hashed
-// password (or an OTP hash) never leaks into a JSON response again.
+// ignored information shouldn't be displayed to the user when returning user data.
 const PUBLIC_USER_FIELDS = "-password -OTP -forgetPasswordOTP -__v";
 
-// `phone` is stored AES-encrypted (see signUp/updateProfile below) — any
-// response that includes it has to decrypt it first, or the caller gets
-// back ciphertext instead of a phone number.
-const withDecryptedPhone = (userDoc) => {
-    const obj = userDoc.toObject();
-    if (obj.phone) obj.phone = Decrypt(obj.phone, process.env.ENCRYPTION_KEY);
-    return obj;
+// updated information reformating for user display
+const updatedUser = (user) => {
+    const updatedInfo = user.toObject();
+    if (updatedInfo.phone) updatedInfo.phone = Decrypt(updatedInfo.phone, process.env.ENCRYPTION_KEY);
+    return updatedInfo;
 };
+
+// ------------------------ signUp ------------------------------
 
 export const signUp = asyncHandler(async (req, res, next) => {
   const { name, email, password, gender, phone, cPassword } = req.body;
   if(await userModel.findOne({ email })) {
-    return res.status(400).json({ message: "Email already exists" });
+    return next(new Error("Email already exists", { cause: 409 }));
   }
   if(password !== cPassword) {
-    return res.status(400).json({ message: "Passwords do not match" });
+    return next(new Error("Passwords do not match", { cause: 400 }));
   }
   const hashedPassword = await Hash(password, +process.env.SALT_ROUND);
   const phoneEncrypted = await Encrypt(phone, process.env.ENCRYPTION_KEY);
@@ -40,28 +38,32 @@ export const signUp = asyncHandler(async (req, res, next) => {
     email,
     password: hashedPassword,
     gender,
-    phone: phoneEncrypted,
-    OTP: null
+    phone: phoneEncrypted
   });
   eventEmiter.emit("sendEmail", {email})
-  const created = await userModel.findById(user._id).select(PUBLIC_USER_FIELDS);
-  return res.status(201).json({ message: "User created successfully", user: created})
+  const createdUser = await userModel.findById(user._id).select(PUBLIC_USER_FIELDS);
+  return res.status(201).json({ message: "User created successfully", user: createdUser})
 })
+
+// ------------------------ confirmEmail ------------------------------
+
 export const confirmEmail = asyncHandler(async (req,res,next)=>{
     const {code, email} = req.body
     const user = await userModel.findOne({email, confirmed: false});
-    //check email
     if(!user){
         return next(new Error('Email not exists or already verified', {cause : 409}))
     }
     //compare OTP
     const OTP = user.OTP
     if(!await compare(code , OTP)){
-        return next(new Error('Confirmation code is not correct'))
+        return next(new Error('Confirmation code is not correct', {cause: 400}))
     }
     await userModel.updateOne({email},{confirmed: true , $unset: {OTP: 0} })
     return res.status(200).json({message: "user confirmed successfully"})
 })
+
+// ------------------------ SignIn ------------------------------
+
 export const SignIn = asyncHandler(async (req,res,next)=>{
     const {email, password} = req.body;
     const user = await userModel.findOne({email})
@@ -83,35 +85,31 @@ export const SignIn = asyncHandler(async (req,res,next)=>{
         SIGNATURE: user.role == "user" ? process.env.SIGNATURE_TOKEN_USER : process.env.SIGNATURE_TOKEN_ADMIN,
         option: {expiresIn: "1w"}
     })
-    const publicUser = await userModel.findById(user._id).select(PUBLIC_USER_FIELDS);
-    return res.status(200).json({message:"user logged in successfully", user : publicUser, token: token})
+    const createdUser = await userModel.findOne({email}).select(PUBLIC_USER_FIELDS)
+    return res.status(200).json({message:"user logged in successfully", user : createdUser, token: token})
 })
 
-// Google Identity Services flow: the frontend verifies nothing itself, it
-// just hands us the ID token GIS returned. We verify it server-side, then
-// find-or-create the account — this is the only place a Google account is
-// ever created or logged in.
+// ------------------------ googleSignIn ------------------------------
+
 export const googleSignIn = asyncHandler(async (req,res,next)=>{
     const {idToken} = req.body;
-    const payload = await verifyGoogleToken(idToken);
-    if(!payload?.email){
+    const GoogleData = await verifyGoogleToken(idToken);
+    if(!GoogleData?.email){
         return next(new Error("Could not verify Google account", {cause: 400}))
     }
-    let user = await userModel.findOne({ $or: [{googleId: payload.sub}, {email: payload.email}] });
+    let user = await userModel.findOne({ $or: [{googleId: GoogleData.sub}, {email: GoogleData.email}] });
     if(!user){
         user = await userModel.create({
-            name: payload.name || payload.email.split("@")[0],
-            email: payload.email,
+            name: GoogleData.name || GoogleData.email.split("@")[0],
+            email: GoogleData.email,
             provider: "google",
-            googleId: payload.sub,
-            avatar: payload.picture,
+            googleId: GoogleData.sub,
+            avatar: GoogleData.picture,
             confirmed: true
         })
     } else if(!user.googleId){
-        // A local account already used this email — link it instead of
-        // creating a duplicate.
-        user.googleId = payload.sub;
-        user.avatar = user.avatar || payload.picture;
+        user.googleId = GoogleData.sub;
+        user.avatar = user.avatar || GoogleData.picture;
         await user.save();
     }
     const token = await generateToken({
@@ -119,14 +117,20 @@ export const googleSignIn = asyncHandler(async (req,res,next)=>{
         SIGNATURE: user.role == "user" ? process.env.SIGNATURE_TOKEN_USER : process.env.SIGNATURE_TOKEN_ADMIN,
         option: {expiresIn: "1w"}
     })
-    const publicUser = await userModel.findById(user._id).select(PUBLIC_USER_FIELDS);
-    return res.status(200).json({message: "user logged in successfully", user: publicUser, token})
+    const createdUser = await userModel.findById(user._id).select(PUBLIC_USER_FIELDS)
+    return res.status(200).json({message: "user logged in successfully", user: createdUser, token})
 })
 
+// ------------------------ getWishlist ------------------------------
+
 export const getWishlist = asyncHandler(async (req,res,next)=>{
+    // (.populate("wishlist")) is used to replace the aray of strings "wishlist" to an array of objects "products" so it include data instaid of just products names 
     const user = await userModel.findById(req.user._id).populate("wishlist").select("wishlist");
     return res.status(200).json({message: "wishlist", wishlist: user.wishlist})
 })
+
+// ------------------------ addToWishlist ------------------------------
+
 export const addToWishlist = asyncHandler(async (req,res,next)=>{
     const {productId} = req.body;
     const user = await userModel.findByIdAndUpdate(
@@ -136,6 +140,9 @@ export const addToWishlist = asyncHandler(async (req,res,next)=>{
     ).select("wishlist")
     return res.status(200).json({message:"Product added to the wishlist", wishlist: user.wishlist})
 })
+
+// ------------------------ removeFromWishlist ------------------------------
+
 export const removeFromWishlist = asyncHandler(async (req,res,next)=>{
     const {productId} = req.params;
     const user = await userModel.findByIdAndUpdate(
@@ -146,30 +153,28 @@ export const removeFromWishlist = asyncHandler(async (req,res,next)=>{
     return res.status(200).json({message:"Product removed from the wishlist", wishlist: user.wishlist})
 })
 
+// ------------------------ updateProfile ------------------------------
+
 export const updateProfile = asyncHandler(async (req,res,next)=>{
     const {name, phone, address, gender} = req.body;
-    // Whitelisted explicitly — spreading req.body straight into the update
-    // used to let a caller set arbitrary fields (role included). Email is
-    // deliberately not accepted here — see requestEmailChange/
-    // confirmEmailChange, which require re-confirming the new address.
     const update = {};
     if(name !== undefined) update.name = name;
     if(address !== undefined) update.address = address;
     if(gender !== undefined) update.gender = gender;
     if(phone !== undefined) update.phone = await Encrypt(phone, process.env.ENCRYPTION_KEY);
     const user = await userModel.findByIdAndUpdate(req.user._id, update, {new: true}).select(PUBLIC_USER_FIELDS)
-    return res.status(200).json({message:"Updated", user: withDecryptedPhone(user)})
-})
-export const profile = asyncHandler(async (req,res,next)=>{
-    const user = await userModel.findById(req.user._id).select(PUBLIC_USER_FIELDS)
-    return res.status(200).json({message:"user Info", user: withDecryptedPhone(user)})
+    return res.status(200).json({message:"Updated", user: updatedUser(user)})
 })
 
-// Two-step, same shape as signup confirmation: request sends a code to the
-// *new* address without touching the account yet; confirm applies it only
-// once that code checks out. `email` itself never changes in between, so
-// an unconfirmed change can't lock anyone out or leave the account
-// reachable at neither address.
+// ------------------------ profile ------------------------------
+
+export const profile = asyncHandler(async (req,res,next)=>{
+    const user = await userModel.findById(req.user._id).select(PUBLIC_USER_FIELDS)
+    return res.status(200).json({message:"user Info", user : updatedUser(user)})
+})
+
+// ------------------------ requestEmailChange ------------------------------
+
 export const requestEmailChange = asyncHandler(async (req,res,next)=>{
     const {newEmail} = req.body;
     if(newEmail === req.user.email){
@@ -178,16 +183,12 @@ export const requestEmailChange = asyncHandler(async (req,res,next)=>{
     if(await userModel.findOne({email: newEmail})){
         return next(new Error("Email already in use", {cause: 409}))
     }
-    const OTP = customAlphabet("123456789", 6)()
-    const hash = await Hash(OTP, +process.env.SALT_ROUND)
-    await userModel.findByIdAndUpdate(req.user._id, {pendingEmail: newEmail, OTP: hash})
-    const htmlInner = await htmlEmail(OTP)
-    const sent = await sendEmail(newEmail, "Confirm your new email", htmlInner)
-    if(!sent){
-        return next(new Error("Failed to send confirmation email", {cause: 500}))
-    }
+    eventEmiter.emit("changeEmail", {email: newEmail})
+    await userModel.findByIdAndUpdate(req.user._id, {$set: {pendingEmail: newEmail}});
     return res.status(200).json({message: "Confirmation code sent to your new email"})
 })
+
+// ------------------------ confirmEmailChange ------------------------------
 
 export const confirmEmailChange = asyncHandler(async (req,res,next)=>{
     const {code} = req.body;
@@ -206,6 +207,8 @@ export const confirmEmailChange = asyncHandler(async (req,res,next)=>{
     return res.status(200).json({message: "Email updated", email: newEmail})
 })
 
+// ------------------------ changePassword ------------------------------
+
 export const changePassword = asyncHandler(async (req,res,next)=>{
     const {currentPassword, newPassword, cNewPassword} = req.body;
     if(newPassword !== cNewPassword){
@@ -222,6 +225,9 @@ export const changePassword = asyncHandler(async (req,res,next)=>{
     await userModel.findByIdAndUpdate(req.user._id, {password: hashed});
     return res.status(200).json({message: "Password updated"})
 })
+
+// ------------------------ forgetPassword ------------------------------
+
 export const forgetPassword = asyncHandler(async (req,res,next)=>{
     const {email} = req.body
     if(!await userModel.findOne({email})){
@@ -230,17 +236,18 @@ export const forgetPassword = asyncHandler(async (req,res,next)=>{
     eventEmiter.emit("forgetPassword", {email})
     return res.status(200).json({message:"One Time Code Has been sent to your email"})
 })
+
+// ------------------------ resetPassword ------------------------------
+
 export const resetPassword = asyncHandler(async(req,res,next)=>{
     const {email, code, newPassword, cNewPassword} = req.body;
     const user = await userModel.findOne({email});
-    //check email
     if(!user){
         return next(new Error('Email not exists', {cause : 409}))
     }
-    //compare OTP
     const OTP = user.OTP
     if(!await compare(code , OTP)){
-        return next(new Error('One time code is not correct'))
+        return next(new Error('One time code is not correct', {cause: 400}))
     }
     if(newPassword !== cNewPassword){
         return next(new Error("Passward and Confirm Passward are not matching!", {cause: 400}))

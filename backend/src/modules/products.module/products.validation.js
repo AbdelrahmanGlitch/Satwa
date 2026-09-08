@@ -42,7 +42,6 @@ export const updateProductSchema = {
         stockQuantity: joi.number().min(0),
         bestSeller: joi.boolean(),
         isNew: joi.boolean(),
-        // public_ids of existing images to drop, alongside any new files
         removeImages: joi.array().items(joi.string())
     })
 };

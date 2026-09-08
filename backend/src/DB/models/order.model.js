@@ -21,8 +21,6 @@ const orderSchema = new mongoose.Schema(
         required: true,
         min: 1
       },
-      // Price at the time of purchase, so later price changes never rewrite
-      // the history of what was actually paid for.
       unitPrice: {
         type: Number,
         required: true
@@ -45,9 +43,6 @@ const orderSchema = new mongoose.Schema(
       enum: orderStatusEnum,
       default: "pending"
     },
-    // Fake-gateway checkout — see payment.module. Kept generic (method
-    // name + reference) so swapping in a real gateway later is a
-    // find-and-replace inside that one module, not a schema migration.
     paymentMethod: {
       type: String,
       default: "fake_gateway"
